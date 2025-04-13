@@ -8,6 +8,7 @@ import * as dotenv from "dotenv";
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import axios from 'axios';
 // Define the tools
 const TOOLS = [
     {
@@ -295,6 +296,186 @@ const TOOLS = [
                 course_id: { type: "string", description: "ID or URL of the course" }
             },
             required: ["course_id"]
+        }
+    },
+    {
+        name: "canvas_list_assignments",
+        description: "Lists all assignments for a course that are visible to the current student",
+        inputSchema: {
+            type: "object",
+            properties: {
+                course_id: {
+                    type: "string",
+                    description: "The Canvas course ID"
+                },
+                include: {
+                    type: "array",
+                    description: "Additional assignment attributes to include",
+                    items: {
+                        type: "string",
+                        enum: ["submission", "assignment_visibility", "all_dates", "overrides", "observed_users", "score_statistics"]
+                    }
+                },
+                order_by: {
+                    type: "string",
+                    description: "The field to sort results by",
+                    enum: ["position", "name", "due_at"]
+                },
+                bucket: {
+                    type: "string",
+                    description: "Filter by assignment state",
+                    enum: ["past", "overdue", "undated", "ungraded", "unsubmitted", "upcoming", "future"]
+                }
+            },
+            required: ["course_id"]
+        },
+        handler: async function (params) {
+            try {
+                const token = process.env.CANVAS_API_TOKEN;
+                const domain = process.env.CANVAS_DOMAIN || 'canvas.instructure.com';
+                if (!token) {
+                    return { error: "Canvas API token not provided" };
+                }
+                let url = `https://${domain}/api/v1/courses/${params.course_id}/assignments`;
+                // Build query parameters
+                const queryParams = new URLSearchParams();
+                if (params.include && params.include.length > 0) {
+                    queryParams.append('include', params.include.join(','));
+                }
+                if (params.order_by) {
+                    queryParams.append('order_by', params.order_by);
+                }
+                if (params.bucket) {
+                    queryParams.append('bucket', params.bucket);
+                }
+                // Add query parameters to URL if any exist
+                if (queryParams.toString()) {
+                    url += `?${queryParams.toString()}`;
+                }
+                const response = await axios.get(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                return response.data;
+            }
+            catch (error) {
+                console.error('Error fetching assignments:', error.response?.data || error.message);
+                return {
+                    error: error.response?.data?.errors || error.message,
+                    status: error.response?.status
+                };
+            }
+        }
+    },
+    {
+        name: "canvas_get_assignment_details",
+        description: "Get detailed information about a specific assignment",
+        inputSchema: {
+            type: "object",
+            properties: {
+                course_id: {
+                    type: "string",
+                    description: "The Canvas course ID"
+                },
+                assignment_id: {
+                    type: "string",
+                    description: "The Canvas assignment ID"
+                },
+                include: {
+                    type: "array",
+                    description: "Additional assignment attributes to include",
+                    items: {
+                        type: "string",
+                        enum: ["submission", "assignment_visibility", "overrides", "observed_users", "score_statistics"]
+                    }
+                }
+            },
+            required: ["course_id", "assignment_id"]
+        },
+        handler: async function (params) {
+            try {
+                const token = process.env.CANVAS_API_TOKEN;
+                const domain = process.env.CANVAS_DOMAIN || 'canvas.instructure.com';
+                if (!token) {
+                    return { error: "Canvas API token not provided" };
+                }
+                let url = `https://${domain}/api/v1/courses/${params.course_id}/assignments/${params.assignment_id}`;
+                // Build query parameters
+                const queryParams = new URLSearchParams();
+                if (params.include && params.include.length > 0) {
+                    queryParams.append('include', params.include.join(','));
+                }
+                // Add query parameters to URL if any exist
+                if (queryParams.toString()) {
+                    url += `?${queryParams.toString()}`;
+                }
+                const response = await axios.get(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                return response.data;
+            }
+            catch (error) {
+                console.error('Error fetching assignment details:', error.response?.data || error.message);
+                return {
+                    error: error.response?.data?.errors || error.message,
+                    status: error.response?.status
+                };
+            }
+        }
+    },
+    {
+        name: "canvas_list_courses",
+        description: "List all courses available to the user in Canvas",
+        inputSchema: {
+            type: "object",
+            properties: {
+                include: {
+                    type: "array",
+                    description: "Additional course attributes to include",
+                    items: {
+                        type: "string",
+                        enum: ["term", "total_students", "teachers", "account_name", "concluded"]
+                    }
+                }
+            }
+        },
+        handler: async function (params) {
+            try {
+                const token = process.env.CANVAS_API_TOKEN;
+                const domain = process.env.CANVAS_DOMAIN || 'canvas.instructure.com';
+                if (!token) {
+                    return { error: "Canvas API token not provided" };
+                }
+                let url = `https://${domain}/api/v1/courses`;
+                // Build query parameters
+                const queryParams = new URLSearchParams();
+                if (params.include && params.include.length > 0) {
+                    queryParams.append('include', params.include.join(','));
+                }
+                // Add query parameters to URL if any exist
+                if (queryParams.toString()) {
+                    url += `?${queryParams.toString()}`;
+                }
+                const response = await axios.get(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                return response.data;
+            }
+            catch (error) {
+                console.error('Error fetching courses:', error.response?.data || error.message);
+                return {
+                    error: error.response?.data?.errors || error.message,
+                    status: error.response?.status
+                };
+            }
         }
     }
 ];
@@ -648,6 +829,95 @@ class CanvasMCPServer {
                         const announcements = await this.client.listAnnouncements(course_id);
                         return {
                             content: [{ type: "text", text: JSON.stringify(announcements, null, 2) }]
+                        };
+                    }
+                    case "canvas_list_assignments": {
+                        const { course_id, include, order_by, bucket } = args;
+                        if (!course_id) {
+                            throw new Error("Missing required field: course_id");
+                        }
+                        // Create a direct axios request
+                        const token = process.env.CANVAS_API_TOKEN;
+                        const domain = process.env.CANVAS_DOMAIN || 'canvas.instructure.com';
+                        // Fix the URL format - don't include the protocol in the domain
+                        // and add it separately
+                        let url = `https://${domain}/api/v1/courses/${course_id}/assignments`;
+                        // Build query parameters
+                        const queryParams = new URLSearchParams();
+                        if (include && include.length > 0) {
+                            queryParams.append('include', include.join(','));
+                        }
+                        if (order_by) {
+                            queryParams.append('order_by', order_by);
+                        }
+                        if (bucket) {
+                            queryParams.append('bucket', bucket);
+                        }
+                        // Add query parameters to URL if any exist
+                        if (queryParams.toString()) {
+                            url += `?${queryParams.toString()}`;
+                        }
+                        const response = await axios.get(url, {
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(response.data, null, 2) }]
+                        };
+                    }
+                    case "canvas_get_assignment_details": {
+                        const { course_id, assignment_id, include } = args;
+                        if (!course_id || !assignment_id) {
+                            throw new Error("Missing required fields: course_id and assignment_id");
+                        }
+                        // Create a direct axios request
+                        const token = process.env.CANVAS_API_TOKEN;
+                        const domain = process.env.CANVAS_DOMAIN || 'canvas.instructure.com';
+                        let url = `https://${domain}/api/v1/courses/${course_id}/assignments/${assignment_id}`;
+                        // Build query parameters
+                        const queryParams = new URLSearchParams();
+                        if (include && include.length > 0) {
+                            queryParams.append('include', include.join(','));
+                        }
+                        // Add query parameters to URL if any exist
+                        if (queryParams.toString()) {
+                            url += `?${queryParams.toString()}`;
+                        }
+                        const response = await axios.get(url, {
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(response.data, null, 2) }]
+                        };
+                    }
+                    case "canvas_list_courses": {
+                        const { include } = args;
+                        // Create a direct axios request
+                        const token = process.env.CANVAS_API_TOKEN;
+                        const domain = process.env.CANVAS_DOMAIN || 'canvas.instructure.com';
+                        let url = `https://${domain}/api/v1/courses`;
+                        // Build query parameters
+                        const queryParams = new URLSearchParams();
+                        if (include && include.length > 0) {
+                            queryParams.append('include', include.join(','));
+                        }
+                        // Add query parameters to URL if any exist
+                        if (queryParams.toString()) {
+                            url += `?${queryParams.toString()}`;
+                        }
+                        const response = await axios.get(url, {
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(response.data, null, 2) }]
                         };
                     }
                     default:
